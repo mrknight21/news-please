@@ -7,6 +7,8 @@ import json
 import logging
 import os.path
 import sys
+from firebase_admin import auth as frb_auth, firestore
+import firebase_admin
 
 import pymysql
 import psycopg2
@@ -653,6 +655,55 @@ class ElasticsearchStorage(ExtractedInformationStorage):
                 self.log.error("Lost connection to Elasticsearch, this module will be deactivated: %s" % error)
         return item
 
+
+class FireBaseStorage(ExtractedInformationStorage):
+    """
+    Handles remote storage of the meta data in Elasticsearch
+    """
+
+    log = None
+    cfg = None
+    current_collection = None
+    archive_collection = None
+
+    def __init__(self):
+        self.log = logging.getLogger(__name__)
+        self.cfg = CrawlerConfig.get_instance()
+        self.database = self.cfg.section("Firebase")
+        self.firebase_init()
+        self.conn = firestore.client()
+        self.current_collection = self.database["collection_current"]
+        self.archive_collection = self.database["collection_archive"]
+
+    def process_item(self, item, spider):
+        news_dic = self.parse_item(item)
+        news_id = self.generate_id(item)
+        try:
+            self.conn
+
+    def parse_item(self, item):
+        news_dic = {
+            'country': 'nz',
+            'source_domain': item.get('source_domain', None),
+            'language': item.get('article_language', 'en'),
+            'author': item.get('article_author', []),
+            'title': item.get('article_title', None),
+            'description': item.get('article_description', None),
+            'url': item.get('url', None),
+            'urlToImage': item.get('article_image', None),
+            'publishedAt': item.get('article_publish_date', None),
+            'downloadedAt': item.get('download_date', None),
+            'tag': item.get('article_insight', {}),
+            'bag': item.get('article_bag', {}),
+            'main_category': "general",
+            'categories': []
+        }
+        return news_dic
+
+    def firebase_init(self):
+        if (not len(firebase_admin._apps)):
+            cred = firebase_admin.credentials.Certificate(self.database['json_key'])
+            firebase_admin.initialize_app(cred)
 
 class DateFilter(object):
     """
