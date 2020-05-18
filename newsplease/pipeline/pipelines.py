@@ -7,6 +7,7 @@ import json
 import logging
 import os.path
 import sys
+import hashlib
 from firebase_admin import auth as frb_auth, firestore
 import firebase_admin
 
@@ -674,12 +675,28 @@ class FireBaseStorage(ExtractedInformationStorage):
         self.conn = firestore.client()
         self.current_collection = self.database["collection_current"]
         self.archive_collection = self.database["collection_archive"]
+        self.drop_text = self.database["drop_text"]
+        self.store_insight = self.database["store_insight"]
 
     def process_item(self, item, spider):
         news_dic = self.parse_item(item)
-        news_id = self.generate_id(item)
+        news_id = self.generate_news_id(item)
         try:
-            self.conn
+            article_in_firebase = self.conn.collection(self.current_collection).document(news_id).get()
+            if not article_in_firebase.exists:
+                ref = self.conn.collection(self.current_collection).document(news_id)
+                ref.set(news_dic)
+        except Exception as e:
+            print(e)
+
+    def generate_news_id(self, item, digits = 18):
+        title = item['article_title']
+        url = item['url']
+        # salt = 'bryanhandsome'
+        concat_str = title + str(url)
+        hashed_id = hashlib.sha224(concat_str.encode('utf-8')).hexdigest()
+        id_str = hashed_id[:digits]
+        return id_str
 
     def parse_item(self, item):
         news_dic = {
@@ -693,11 +710,15 @@ class FireBaseStorage(ExtractedInformationStorage):
             'urlToImage': item.get('article_image', None),
             'publishedAt': item.get('article_publish_date', None),
             'downloadedAt': item.get('download_date', None),
-            'tag': item.get('article_insight', {}),
-            'bag': item.get('article_bag', {}),
+            'tag': {},
+            'bag': {},
             'main_category': "general",
             'categories': []
         }
+        if not self.drop_text:
+            news_dic['article_text'] = item.get('article_text', None)
+        if self.store_insight:
+            news_dic['tag'] = item.get('article_insight', {})
         return news_dic
 
     def firebase_init(self):

@@ -47,7 +47,10 @@ class RssCrawler(scrapy.Spider):
 
         :param obj response: The scrapy response
         """
-        yield scrapy.Request(self.helper.url_extractor.get_rss_url(response),
+        rss_url = self.helper.url_extractor.get_rss_url(response)
+        if 'rss' in self.original_url and re.findall("xml$", self.original_url):
+            rss_url = self.original_url
+        yield scrapy.Request(rss_url,
                              callback=self.rss_parse)
 
     def rss_parse(self, response):
@@ -96,11 +99,15 @@ class RssCrawler(scrapy.Spider):
         """
 
         # Follow redirects
+        support = False
         opener = urllib2.build_opener(urllib2.HTTPRedirectHandler)
         url = UrlExtractor.url_to_request_with_agent(url)
         redirect = opener.open(url).url
         redirect = UrlExtractor.url_to_request_with_agent(redirect)
         response = urllib2.urlopen(redirect).read()
-
+        if re.search(re_rss, response.decode('utf-8')) is not None:
+            support = True
+        elif 'rss' in url.full_url and re.findall("xml$", url.full_url):
+            support = True
         # Check if a standard rss feed exists
-        return re.search(re_rss, response.decode('utf-8')) is not None
+        return support
