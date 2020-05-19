@@ -29,7 +29,8 @@ class ParseCrawler(object):
             response,
             source_domain,
             original_url,
-            rss_title=None
+            rss_title=None,
+            meta_data=None
     ):
         """
         Responsible for passing a NewscrawlerItem to the pipeline if the
@@ -43,13 +44,14 @@ class ParseCrawler(object):
         """
         if self.helper.heuristics.is_article(response, original_url):
             return self.pass_to_pipeline(
-                response, source_domain, rss_title=None)
+                response, source_domain, rss_title=None, meta_data=meta_data)
 
     def pass_to_pipeline(
             self,
             response,
             source_domain,
-            rss_title=None
+            rss_title=None,
+            meta_data=None
     ):
         timestamp = time.strftime('%Y-%m-%d %H:%M:%S',
                                   time.gmtime(time.time()))
@@ -73,6 +75,10 @@ class ParseCrawler(object):
             article['rss_title'] = 'NULL'
         else:
             article['rss_title'] = rss_title.encode("utf-8")
+        if meta_data is None:
+            article['article_meta_data'] = 'NULL'
+        else:
+            article['article_meta_data'] = meta_data
         article['spider_response'] = response
         article['article_title'] = 'NULL'
         article['article_description'] = 'NULL'

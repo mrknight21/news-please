@@ -42,5 +42,7 @@ class NewscrawlerItem(scrapy.Item):
     article_publish_date = scrapy.Field()
     # Extracted language of the article
     article_language = scrapy.Field()
-    # Extracted language of the article
+    # Analyzed insight of the article
     article_insight = scrapy.Field()
+    # Optional Metadata of the article
+    article_meta_data = scrapy.Field()

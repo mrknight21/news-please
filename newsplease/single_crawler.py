@@ -88,7 +88,7 @@ class SingleCrawler(object):
         self.log.debug("Config initialized - Further initialisation.")
 
         self.cfg_crawler = self.cfg.section("Crawler")
-        self.direct_rss = False
+        self.meta_data = {}
 
         # load the URL-input-json-file or - if in library mode - take the json_file_path as the site information (
         # kind of hacky..)
@@ -114,7 +114,8 @@ class SingleCrawler(object):
             self.crawler_name = site["crawler"]
         else:
             self.crawler_name = self.cfg.section("Crawler")["default"]
-
+        if "meta_data" in site:
+            self.meta_data =  site.get("meta_data", {})
         # Get the real crawler-class (already "fallen back")
         crawler_class = self.get_crawler(self.crawler_name, site["url"])
 
@@ -245,7 +246,8 @@ class SingleCrawler(object):
             self.helper,
             url=url,
             config=self.cfg,
-            ignore_regex=ignore_regex)
+            ignore_regex=ignore_regex,
+            meta_data = self.meta_data)
 
     def remove_jobdir_if_not_resume(self):
         """

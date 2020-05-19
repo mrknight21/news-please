@@ -682,12 +682,13 @@ class FireBaseStorage(ExtractedInformationStorage):
         news_dic = self.parse_item(item)
         news_id = self.generate_news_id(item)
         try:
-            article_in_firebase = self.conn.collection(self.current_collection).document(news_id).get()
-            if not article_in_firebase.exists:
+            article_in_firebase = False
+            if not article_in_firebase:
                 ref = self.conn.collection(self.current_collection).document(news_id)
                 ref.set(news_dic)
+                self.log.info("Successfully uploaded article id :{} to FireStore collection".format(news_id))
         except Exception as e:
-            print(e)
+            self.log.debug(e)
 
     def generate_news_id(self, item, digits = 18):
         title = item['article_title']
@@ -699,17 +700,27 @@ class FireBaseStorage(ExtractedInformationStorage):
         return id_str
 
     def parse_item(self, item):
+        source_domain = item.get('source_domain', None)
+        if source_domain:
+            source_domain = source_domain.decode()
+        pub_date = item.get('article_publish_date', None)
+        if pub_date:
+            pub_date = datetime.datetime.fromisoformat(pub_date)
+        dld_date= item.get('download_date', None)
+        if dld_date:
+            dld_date = datetime.datetime.fromisoformat(dld_date)
+
         news_dic = {
             'country': 'nz',
-            'source_domain': item.get('source_domain', None),
+            'source_domain': source_domain,
             'language': item.get('article_language', 'en'),
             'author': item.get('article_author', []),
             'title': item.get('article_title', None),
             'description': item.get('article_description', None),
             'url': item.get('url', None),
             'urlToImage': item.get('article_image', None),
-            'publishedAt': item.get('article_publish_date', None),
-            'downloadedAt': item.get('download_date', None),
+            'publishedAt': pub_date,
+            'downloadedAt': dld_date,
             'tag': {},
             'bag': {},
             'main_category': "general",
@@ -719,6 +730,9 @@ class FireBaseStorage(ExtractedInformationStorage):
             news_dic['article_text'] = item.get('article_text', None)
         if self.store_insight:
             news_dic['tag'] = item.get('article_insight', {})
+        meta_data = item.get('article_meta_data', 'NULL')
+        if meta_data != 'NULL':
+            news_dic.update(meta_data)
         return news_dic
 
     def firebase_init(self):

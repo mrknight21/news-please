@@ -23,6 +23,8 @@ class SitemapCrawler(scrapy.spiders.SitemapSpider):
         self.helper = helper
         self.original_url = url
 
+        self.meta_data = kwargs.get('meta_data', {})
+
         self.allowed_domains = [self.helper.url_extractor
                                     .get_allowed_domain(url, config.section(
             'Crawler')['sitemap_allow_subdomains'])]
