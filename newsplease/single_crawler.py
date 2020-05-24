@@ -86,6 +86,7 @@ class SingleCrawler(object):
         self.cfg = CrawlerConfig.get_instance()
         self.cfg.setup(self.cfg_file_path)
         self.log.debug("Config initialized - Further initialisation.")
+        self.direct_rss = False
 
         self.cfg_crawler = self.cfg.section("Crawler")
         self.meta_data = {}
@@ -106,6 +107,11 @@ class SingleCrawler(object):
         else:
             ignore_regex = "(%s)|" % \
                            self.cfg.section('Crawler')['ignore_regex']
+        if "direct_rss" in site:
+            try:
+                self.direct_rss = eval(site['direct_rss'])
+            except NameError:
+                self.direct_rss = False
 
         # Get the default crawler. The crawler can be overwritten by fallbacks.
         if "additional_rss_daemon" in site and self.daemonize:
@@ -190,12 +196,15 @@ class SingleCrawler(object):
             if hasattr(current, "supports_site"):
                 supports_site = getattr(current, "supports_site")
                 if callable(supports_site):
-                    try:
-                        crawler_supports_site = supports_site(url)
-                    except Exception as e:
-                        self.log.info(f'Crawler not supported due to: {str(e)}',
-                                      exc_info=True)
-                        crawler_supports_site = False
+                    if crawler == "RssCrawler" and self.direct_rss:
+                        crawler_supports_site = True
+                    else:
+                        try:
+                            crawler_supports_site = supports_site(url)
+                        except Exception as e:
+                            self.log.info(f'Crawler not supported due to: {str(e)}',
+                                          exc_info=True)
+                            crawler_supports_site = False
 
                     if crawler_supports_site:
                         self.log.debug("Using crawler %s for %s.",
@@ -247,7 +256,8 @@ class SingleCrawler(object):
             url=url,
             config=self.cfg,
             ignore_regex=ignore_regex,
-            meta_data = self.meta_data)
+            meta_data = self.meta_data,
+            direct_rss = self.direct_rss)
 
     def remove_jobdir_if_not_resume(self):
         """

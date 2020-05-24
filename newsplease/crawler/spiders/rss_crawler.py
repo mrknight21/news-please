@@ -33,6 +33,7 @@ class RssCrawler(scrapy.Spider):
         self.config = config
         self.helper = helper
         self.meta_data = kwargs.get('meta_data', {})
+        self.direct_rss = kwargs.get('direct_rss', False)
         self.original_url = url
         self.ignored_allowed_domain = self.helper.url_extractor \
             .get_allowed_domain(url)
@@ -46,9 +47,10 @@ class RssCrawler(scrapy.Spider):
 
         :param obj response: The scrapy response
         """
-        rss_url = self.helper.url_extractor.get_rss_url(response)
-        if 'rss' in self.original_url and re.findall("xml$", self.original_url):
+        if 'rss' in self.original_url or re.findall("xml$", self.original_url) or self.direct_rss:
             rss_url = self.original_url
+        else:
+            rss_url = self.helper.url_extractor.get_rss_url(response)
         yield scrapy.Request(rss_url,
                              callback=self.rss_parse)
 
@@ -106,7 +108,7 @@ class RssCrawler(scrapy.Spider):
         response = urllib2.urlopen(redirect).read()
         if re.search(re_rss, response.decode('utf-8')) is not None:
             support = True
-        elif 'rss' in url.full_url and re.findall("xml$", url.full_url):
+        elif '/rss' in url.full_url or re.findall("xml$", url.full_url):
             support = True
         # Check if a standard rss feed exists
         return support
