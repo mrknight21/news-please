@@ -29,7 +29,8 @@ try:
 except ImportError:
     from thread import start_new_thread
 from twisted.internet.error import ReactorAlreadyRunning
-
+import pymongo
+from bson.objectid import ObjectId
 
 class SingleCrawler(object):
     """
@@ -67,7 +68,7 @@ class SingleCrawler(object):
         return cls(cfg_file_path, site, 0, False, False, True)
 
     def __init__(self, cfg_file_path, json_file_path,
-                 site_index, shall_resume, daemonize, library_mode=False):
+                 site_index, shall_resume, daemonize, session_id=None,library_mode=False):
         # set up logging before it's defined via the config file,
         # this will be overwritten and all other levels will be put out
         # as well, if it will be changed.
@@ -89,11 +90,26 @@ class SingleCrawler(object):
         self.direct_rss = False
 
         self.cfg_crawler = self.cfg.section("Crawler")
+        if session_id:
+            try:
+                self.mongo = self.cfg.section("Mongo")
+            except KeyError as e:
+                self.mongo = None
         self.meta_data = {}
 
+        sites = []
+        site = None
         # load the URL-input-json-file or - if in library mode - take the json_file_path as the site information (
         # kind of hacky..)
-        if not library_mode:
+        if session_id and self.mongo.get('mongo_connection', {}) and self.mongo.get('sessions_collection', None):
+            try:
+                site = self.get_site_from_mongo(session_id)
+                # a hacky workaround for the helper
+                sites = [site]
+            except Exception as e:
+                print(e)
+
+        elif not library_mode:
             self.json = JsonConfig.get_instance()
             self.json.setup(self.json_file_path)
             sites = self.json.get_site_objects()
@@ -159,6 +175,21 @@ class SingleCrawler(object):
             start_new_thread(start_process, (self.process, False,))
         else:
             self.process.start()
+
+    def get_site_from_mongo(self, session_id):
+        site = None
+        self.mongo_conn = pymongo.MongoClient(self.mongo.get('mongo_connection', {}))
+        self.mongo_session_collection = self.mongo_conn[self.mongo.get('session_db')][self.mongo['sessions_collection']]
+        self.mongo_processes_collection = self.mongo_conn[self.mongo.get('session_db')][
+            self.mongo['processes_collection']]
+        session_obj = self.mongo_session_collection.find_one({'_id': ObjectId(session_id)})
+        if not session_obj: return site
+        if session_obj:
+            tasks = session_obj['tasks']
+            process_id = tasks[self.site_number]
+            site = self.mongo_processes_collection.find_one({"_id": process_id})
+            self.mongo_processes_collection.update_one({"_id": process_id}, {"$set": {"status":"started"}})
+            return site
 
     def update_jobdir(self, site):
         """
@@ -278,6 +309,7 @@ class SingleCrawler(object):
 def start_process(process, stop_after_job):
     try:
         process.start(stop_after_job)
+        print("Finish!")
     except ReactorAlreadyRunning:
         pass
 
@@ -287,4 +319,5 @@ if __name__ == "__main__":
                   json_file_path=sys.argv[2],
                   site_index=sys.argv[3],
                   shall_resume=sys.argv[4],
-                  daemonize=sys.argv[5])
+                  daemonize=sys.argv[5],
+                  session_id=sys.argv[6])

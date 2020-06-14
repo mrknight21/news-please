@@ -5,6 +5,7 @@ import signal
 import sys
 import threading
 import time
+import datetime
 from distutils.dir_util import copy_tree
 from subprocess import Popen
 
@@ -12,6 +13,8 @@ import plac
 import pymysql
 import psycopg2
 from elasticsearch import Elasticsearch
+import firebase_admin
+import pymongo
 from scrapy.utils.log import configure_logging
 
 cur_path = os.path.dirname(os.path.realpath(__file__))
@@ -110,6 +113,8 @@ class NewsPleaseLauncher(object):
         self.mysql = self.cfg.section("MySQL")
         self.postgresql = self.cfg.section("Postgresql")
         self.elasticsearch = self.cfg.section("Elasticsearch")
+        self.firebase = self.cfg.section("Firebase")
+        self.mongo = self.cfg.section("Mongo")
 
         # perform reset if given as parameter
         if is_reset_mysql:
@@ -161,7 +166,13 @@ class NewsPleaseLauncher(object):
         Manages all crawlers, threads and limites the number of parallel
         running threads.
         """
-        sites = self.json.get_site_objects()
+        session_id = None
+        if self.firebase.get('get_sites', None):
+            sites = self.get_sites_from_firebase()
+        if not sites:
+            sites = self.json.get_site_objects()
+        if self.mongo.get('sessions_collection', None) and self.mongo.get('mongo_connection', None):
+            session_id = self.register_session_in_mongo(sites)
         for index, site in enumerate(sites):
             if "daemonize" in site:
                 self.daemon_list.add_daemon(index, site["daemonize"])
@@ -180,7 +191,7 @@ class NewsPleaseLauncher(object):
         for _ in range(num_threads):
             thread = threading.Thread(target=self.manage_crawler,
                                       args=(),
-                                      kwargs={})
+                                      kwargs={'session_id': session_id})
             self.threads.append(thread)
             thread.start()
 
@@ -210,7 +221,7 @@ class NewsPleaseLauncher(object):
                 # irrelevant.
                 pass
 
-    def manage_crawler(self):
+    def manage_crawler(self, session_id = None):
         """
         Manages a normal crawler thread.
 
@@ -225,7 +236,7 @@ class NewsPleaseLauncher(object):
                 self.number_of_active_crawlers -= 1
                 break
 
-            self.start_crawler(index)
+            self.start_crawler(index, session_id=session_id)
 
     def manage_daemon(self):
         """
@@ -243,7 +254,7 @@ class NewsPleaseLauncher(object):
             if not self.shutdown:
                 self.start_crawler(item[1], daemonize=True)
 
-    def start_crawler(self, index, daemonize=False):
+    def start_crawler(self, index, daemonize=False, session_id = None):
         """
         Starts a crawler from the input-array.
 
@@ -258,6 +269,10 @@ class NewsPleaseLauncher(object):
                         "%s" % index,
                         "%s" % self.shall_resume,
                         "%s" % daemonize]
+        if session_id:
+            call_process.append("%s" % session_id)
+        else:
+            print("no session id")
 
         self.log.debug("Calling Process: %s", call_process)
 
@@ -525,6 +540,65 @@ Cleanup files:
             if not os.path.exists(path):
                 self.log.error("%s does not exist.", path)
             self.log.error(error)
+
+    def get_sites_from_firebase(self):
+        tasks = []
+        if not self.firebase:
+            return tasks
+        try:
+            if (not len(firebase_admin._apps)):
+                cred = firebase_admin.credentials.Certificate(self.firebase['json_key'])
+                firebase_admin.initialize_app(cred)
+            firebase_cli = firebase_admin.firestore.client()
+            stream = firebase_cli.collection(self.firebase['domain_collection']).stream()
+            for doc_obj in stream:
+                domain_id = doc_obj.id
+                doc = doc_obj.to_dict()
+                for source in doc['article_sources']:
+                    task = {}
+                    task.update(source)
+                    if not task['meta_data']['country']:
+                        task['meta_data']['country'] = doc['country']
+                    domain_info = {
+                        "domain_id": doc['_id'],
+                        "domain_name": doc['domain_name'],
+                        "domain_url": doc['domain_url'],
+                        "domain_icon": doc['icon_image_link'],
+                        "source_id": source['_id'],
+                        "source_url": source['url']
+                    }
+                    task['meta_data'].update(domain_info)
+                    task['created_time'] = datetime.datetime.utcnow()
+                    del task['_id']
+                    tasks.append(task)
+            return tasks
+        except:
+            return tasks
+
+    def register_session_in_mongo(self, sites):
+        try:
+            self.mongo_conn = pymongo.MongoClient(self.mongo.get('mongo_connection', {}))
+            session_collection = self.mongo_conn[self.mongo.get('session_db')][self.mongo['sessions_collection']]
+            process_collection = self.mongo_conn[self.mongo.get('session_db')][self.mongo['processes_collection']]
+            if not sites: return None
+            tasks = []
+            init_data = {
+                "created": datetime.datetime.utcnow(),
+                "tasks": []
+            }
+            session_obj = session_collection.insert_one(init_data).inserted_id
+            session_id = str(session_obj)
+            for site in sites:
+                site['session_id'] = session_obj
+                task_id = process_collection.insert_one(site).inserted_id
+                tasks.append(task_id)
+            myquery = {"_id": session_obj}
+            newvalues = {"$set": {"tasks": tasks}}
+            session_collection.update_one(myquery, newvalues)
+            return session_id
+        except:
+            return None
+
 
     class CrawlerList(object):
         """

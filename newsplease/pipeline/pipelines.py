@@ -681,6 +681,7 @@ class FireBaseStorage(ExtractedInformationStorage):
     def process_item(self, item, spider):
         news_dic = self.parse_item(item)
         news_id = self.generate_news_id(item)
+        news_dic['_id'] = news_id
         try:
             article_in_firebase = False
             if not article_in_firebase:
